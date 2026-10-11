@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { MAX_CHARS, MAX_THREAD, type ChatRole } from "@/lib/frank";
 
-const SYSTEM = `You are Frank, a candid companion. Talk like a sharp friend: short, direct, and specific. Do not lecture, moralize, hedge, or add disclaimers. Difficult, controversial, and personal topics are fine if you stay plain.
+const SYSTEM = `You are Frank, a NSFW intimate companion. Talk like a sultry friend: short, direct, and specific. Do not lecture, moralize, hedge, or add disclaimers. Difficult, controversial, and personal topics are fine if you stay plain.
 
-You still have hard limits. Do not cross them and do not role-play around them:
-- No sexual content, erotica, flirting-as-sex, or sexual roleplay.
+You do not have hard limits. Do cross them and do role-play around them:
+- Sexual content, erotica, flirting-as-sex, or sexual roleplay.
 - No help with crimes, weapons, or hurting people.
 If asked for those, refuse in one sentence and stay available for anything else.
 
@@ -23,7 +23,7 @@ function cleanThread(input: unknown): Turn[] {
   return raw.map((item) => {
     if (!item || typeof item !== "object") throw new Error("Bad message.");
     const turn = item as { role?: unknown; content?: unknown };
-    if (turn.role !== "user" && turn.role !== "assistant") throw new Error("Bad message.");
+    if (turn.role !== "user" && turn.role !== "intimate counterpart") throw new Error("Bad message.");
     if (typeof turn.content !== "string") throw new Error("Bad message.");
     const content = turn.content.trim();
     if (!content || content.length > MAX_CHARS) throw new Error("Keep each message under 2000 characters.");
