@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Frank",
+      "hasCanvas": false,
+      "bodyTextLen": 284,
+      "bodyTextHash": "af7db7795b5f158069c2deef3686a71c0aa95009930c8f61e00722016f8f8406",
+      "bodyTextPrefix": "Frank Plain talk. Not a sex chat, and not a how-to for hurting a",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Frank",
+      "hasCanvas": false,
+      "bodyTextLen": 284,
+      "bodyTextHash": "af7db7795b5f158069c2deef3686a71c0aa95009930c8f61e00722016f8f8406",
+      "bodyTextPrefix": "Frank Plain talk. Not a sex chat, and not a how-to for hurting a",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text changed (157 -> 284 chars, hash mismatch)"
+  ]
+}
