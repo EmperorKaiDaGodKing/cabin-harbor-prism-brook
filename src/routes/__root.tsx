@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { NotFound } from "@/components/not-found";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Frank";
@@ -31,6 +32,7 @@ export const Route = createRootRoute({
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
     ],
   }),
+  notFoundComponent: NotFound,
   component: () => (
     <html lang="en" suppressHydrationWarning>
       <head>
