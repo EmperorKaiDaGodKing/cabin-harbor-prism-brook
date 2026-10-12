@@ -13,7 +13,8 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "A direct companion. Plain talk, no lecture, no sexual roleplay.",
+        content:
+          "A warm, magnetic, intimate companion. Confident, sensual, and emotionally present.",
       },
       { name: "theme-color", content: "#F4EFE6" },
     ],
