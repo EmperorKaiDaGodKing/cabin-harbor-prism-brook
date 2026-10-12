@@ -1,5 +1,9 @@
 {
   "name": "app-builder-workspace",
+  "author": {
+    "name": "EmperorKaiDaGodKing",
+    "email": "kiddfcknfame@gmail.com"
+  },
   "private": true,
   "sideEffects": false,
   "type": "module",
