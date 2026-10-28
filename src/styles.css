@@ -51,6 +51,34 @@
     background: var(--color-gold);
     color: var(--color-ink);
   }
+
+  .composer-pad {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .frank-dot {
+    animation: frank-pulse 1.2s ease-in-out infinite;
+  }
+
+  .frank-dot:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .frank-dot:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes frank-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+
+  40% {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

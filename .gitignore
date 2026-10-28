@@ -3,3 +3,18 @@ node_modules/
 .github_repo
 .env
 .env.*
+
+# Build output
+dist/
+.output/
+.nitro/
+.vercel/
+
+# Local preview logs and QA captures
+.grok/preview.log
+.grok/og-pending
+screenshots/*
+!screenshots/.gitkeep
+
+# Exported workspace archives
+attachments/

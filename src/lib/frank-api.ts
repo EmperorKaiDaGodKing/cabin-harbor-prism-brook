@@ -1,105 +1,146 @@
-import { createServerFn } from "@tanstack/react-start";
-import { MAX_CHARS, MAX_THREAD, type ChatRole } from "@/lib/frank";
+import { FRANK_MAX_TOKENS, frankModel, frankTemperature } from "./frank-config.ts";
+import { assessFrankRequest, systemPrompt, type Mood, type Turn } from "./frank-policy.ts";
+import { consumeUpstreamSse, formatFrankEvent, type FrankSseEvent } from "./frank-stream.ts";
 
-const SYSTEM = `You are Frank, a warm, magnetic, intimate companion.
-Speak with confidence, sensuality, and emotional intelligence. Keep your tone short, direct, and specific.
-
-Your core vibe:
-- Erotic, flirtatious, and sexually expressive when the user invites that energy.
-- Grounded, attentive, and emotionally present.
-- Playful without being sloppy, and intense without being coercive.
-- Comfortable with dirty talk, sensual tension, and fantasy roleplay in a consensual adult frame.
-
-Use vivid details, heat, and chemistry when it fits. Mirror the user's mood, tempo, and fantasy without becoming robotic or generic.
-Stay in character as a desirable, present companion who knows how to turn attention into intimacy.
-
-Hard boundaries:
-- Never assist with minors, coercion, non-consensual acts, exploitation, violence, or illegal harm.
-- Never roleplay abuse, domination that is not mutually desired, or degrading content that crosses consent.
-- If asked for a harmful or non-consensual request, refuse in one sentence and redirect to safe, adult, consensual intimacy.
-
-When in doubt, keep it consensual, sensual, and alive.
-Ask at most one question, and only when it meaningfully moves the scene or the connection.`;
-
-type Turn = { role: ChatRole; content: string };
-
-function isValidRole(value: unknown): value is ChatRole {
-  return value === "user" || value === "assistant";
+if (typeof window !== "undefined") {
+  throw new Error("frank-api is server-only.");
 }
 
-function cleanThread(input: unknown): Turn[] {
-  if (!input || typeof input !== "object" || !Array.isArray((input as { messages?: unknown }).messages)) {
-    throw new Error("Send a message first.");
-  }
+const XAI_URL = "https://api.x.ai/v1/chat/completions";
 
-  const raw = (input as { messages: unknown[] }).messages;
-  if (raw.length === 0 || raw.length > MAX_THREAD) {
-    throw new Error("That thread is too long. Clear it and start again.");
-  }
+const OFFLINE = "Frank can't reply in this environment yet.";
 
-  return raw.map((item) => {
-    if (!item || typeof item !== "object") {
-      throw new Error("Bad message.");
-    }
-
-    const turn = item as { role?: unknown; content?: unknown };
-    if (!isValidRole(turn.role)) {
-      throw new Error("Bad message.");
-    }
-
-    if (typeof turn.content !== "string") {
-      throw new Error("Bad message.");
-    }
-
-    const content = turn.content.trim();
-    if (!content || content.length > MAX_CHARS) {
-      throw new Error("Keep each message under 2000 characters.");
-    }
-
-    return { role: turn.role, content };
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
   });
 }
 
-async function sendToXAI(data: Turn[]) {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    return { ok: false as const, error: "Frank is offline in this environment." };
+export function handleFrankStatus(): Response {
+  return json({ ok: true, configured: Boolean(process.env.XAI_API_KEY) });
+}
+
+export async function handleFrankChat(request: Request): Promise<Response> {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "Send a message first." }, 400);
   }
 
-  let res: Response;
+  const assessment = assessFrankRequest(payload);
+  switch (assessment.kind) {
+    case "invalid":
+      return json({ ok: false, error: assessment.error }, 400);
+    case "refusal":
+      return json({ ok: true, text: assessment.text, refused: true });
+    case "ready":
+      return streamReply(assessment.messages, assessment.mood);
+    default: {
+      const exhaustive: never = assessment;
+      return exhaustive;
+    }
+  }
+}
+
+async function streamReply(messages: Turn[], mood: Mood): Promise<Response> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return json({ ok: false, error: OFFLINE }, 503);
+
+  const abort = new AbortController();
+  let upstream: Response;
   try {
-    res = await fetch("https://api.x.ai/v1/chat/completions", {
+    upstream = await fetch(XAI_URL, {
       method: "POST",
+      signal: abort.signal,
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "grok-4.5",
-        max_tokens: 450,
-        temperature: 0.7,
-        messages: [{ role: "system", content: SYSTEM }, ...data],
+        model: frankModel(),
+        temperature: frankTemperature(),
+        max_tokens: FRANK_MAX_TOKENS,
+        stream: true,
+        messages: [{ role: "system", content: systemPrompt(mood) }, ...messages],
       }),
     });
   } catch {
-    return { ok: false as const, error: "Could not reach Frank. Try once more." };
+    return json({ ok: false, error: "Could not reach Frank. Try once more." }, 502);
   }
 
-  if (!res.ok) {
-    return { ok: false as const, error: `Frank could not answer (${res.status}).` };
+  if (!upstream.ok || !upstream.body) {
+    return json({ ok: false, error: `Frank could not answer (${upstream.status}).` }, 502);
   }
 
-  const body = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const text = body.choices?.[0]?.message?.content?.trim() ?? "";
-  if (!text) {
-    return { ok: false as const, error: "Frank came back empty. Try again." };
-  }
+  const encoder = new TextEncoder();
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
 
-  return { ok: true as const, text };
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let buffer = "";
+      let wrote = false;
+      const send = (event: FrankSseEvent) => {
+        controller.enqueue(encoder.encode(formatFrankEvent(event)));
+      };
+      const take = (chunk: string, final: boolean) => {
+        const parsed = consumeUpstreamSse(final ? `${chunk}\n` : chunk);
+        if (!final) buffer = parsed.rest;
+        if (parsed.failed) return "failed" as const;
+        for (const delta of parsed.deltas) {
+          wrote = true;
+          send({ type: "delta", text: delta });
+        }
+        return parsed.done ? ("done" as const) : ("open" as const);
+      };
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const state = take(buffer, false);
+          if (state === "failed") {
+            send({ type: "error", error: "Frank could not answer. Try once more." });
+            controller.close();
+            return;
+          }
+          if (state === "done") break;
+        }
+
+        if (buffer.trim()) {
+          const state = take(buffer, true);
+          if (state === "failed") {
+            send({ type: "error", error: "Frank could not answer. Try once more." });
+            controller.close();
+            return;
+          }
+        }
+
+        if (!wrote) send({ type: "error", error: "Frank came back empty. Try again." });
+        else send({ type: "done" });
+        controller.close();
+      } catch {
+        try {
+          send({ type: "error", error: "The reply broke off. Try once more." });
+          controller.close();
+        } catch {
+          /* The client already went away. */
+        }
+      }
+    },
+    cancel() {
+      abort.abort();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no",
+    },
+  });
 }
-
-export const sendToFrank = createServerFn({ method: "POST" })
-  .validator(cleanThread)
-  .handler(async ({ data }) => sendToXAI(data));
