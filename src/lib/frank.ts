@@ -1,4 +1,7 @@
-export type ChatRole = "user" | "assistant";
+import { isMood, MAX_CHARS, type ChatRole, type Mood } from "./frank-policy.ts";
+
+export type { ChatRole, Mood };
+export { MAX_CHARS, MAX_THREAD, MOODS } from "./frank-policy.ts";
 
 export type ChatMessage = {
   id: string;
@@ -7,13 +10,14 @@ export type ChatMessage = {
   at: string;
 };
 
-const KEY = "frank.chat.v1";
-export const MAX_THREAD = 16;
-export const MAX_CHARS = 2000;
+const THREAD_KEY = "frank.chat.v1";
+const ADULT_KEY = "frank.adult.v1";
+const MOOD_KEY = "frank.mood.v1";
+const STORED_LIMIT = 80;
 
 export function loadThread(): ChatMessage[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(THREAD_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -38,12 +42,38 @@ export function loadThread(): ChatMessage[] {
 }
 
 export function saveThread(messages: ChatMessage[]) {
-  localStorage.setItem(KEY, JSON.stringify(messages.slice(-80)));
+  localStorage.setItem(THREAD_KEY, JSON.stringify(messages.slice(-STORED_LIMIT)));
 }
 
-export function newMessage(role: ChatRole, content: string): ChatMessage {
+export function loadAdultOk(): boolean {
+  try {
+    return localStorage.getItem(ADULT_KEY) === "yes";
+  } catch {
+    return false;
+  }
+}
+
+export function saveAdultOk() {
+  localStorage.setItem(ADULT_KEY, "yes");
+}
+
+export function loadMood(): Mood {
+  try {
+    const value = localStorage.getItem(MOOD_KEY);
+    if (isMood(value)) return value;
+  } catch {
+    /* Private mode can throw. Fall through to the default tone. */
+  }
+  return "playful";
+}
+
+export function saveMood(mood: Mood) {
+  localStorage.setItem(MOOD_KEY, mood);
+}
+
+export function newMessage(role: ChatRole, content: string, id = crypto.randomUUID()): ChatMessage {
   return {
-    id: crypto.randomUUID(),
+    id,
     role,
     content,
     at: new Date().toISOString(),

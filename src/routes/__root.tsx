@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { NotFound } from "@/components/not-found";
+import { FRANK_DESCRIPTION } from "@/lib/frank-copy";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Frank";
@@ -14,8 +15,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content:
-          "A warm, magnetic, intimate companion. Confident, sensual, and emotionally present.",
+        content: FRANK_DESCRIPTION,
       },
       { name: "theme-color", content: "#F4EFE6" },
     ],
