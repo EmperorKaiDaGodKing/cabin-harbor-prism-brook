@@ -1,5 +1,10 @@
-import { FRANK_MAX_TOKENS, frankModel, frankTemperature } from "./frank-config.ts";
-import { assessFrankRequest, systemPrompt, type Mood, type Turn } from "./frank-policy.ts";
+import {
+  FRANK_MAX_TOKENS,
+  frankModel,
+  frankModelForImages,
+  frankTemperature,
+} from "./frank-config.ts";
+import { assessFrankRequest, toXaiMessages, type Mood, type Turn } from "./frank-policy.ts";
 import { consumeUpstreamSse, formatFrankEvent, type FrankSseEvent } from "./frank-stream.ts";
 
 if (typeof window !== "undefined") {
@@ -48,6 +53,20 @@ async function streamReply(messages: Turn[], mood: Mood): Promise<Response> {
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return json({ ok: false, error: OFFLINE }, 503);
 
+  const payload = toXaiMessages(mood, messages);
+  const seeing = payload.some(
+    (message) =>
+      Array.isArray(message.content) && message.content.some((part) => part.type === "image_url"),
+  );
+  // Never log `body`. Photo turns carry base64 image bytes.
+  const body = JSON.stringify({
+    model: seeing ? frankModelForImages() : frankModel(),
+    temperature: frankTemperature(),
+    max_tokens: FRANK_MAX_TOKENS,
+    stream: true,
+    messages: payload,
+  });
+
   const abort = new AbortController();
   let upstream: Response;
   try {
@@ -58,13 +77,7 @@ async function streamReply(messages: Turn[], mood: Mood): Promise<Response> {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: frankModel(),
-        temperature: frankTemperature(),
-        max_tokens: FRANK_MAX_TOKENS,
-        stream: true,
-        messages: [{ role: "system", content: systemPrompt(mood) }, ...messages],
-      }),
+      body,
     });
   } catch {
     return json({ ok: false, error: "Could not reach Frank. Try once more." }, 502);

@@ -1,3 +1,5 @@
+import { MAX_IMAGES_PER_REQUEST, parseUserImages } from "./frank-media.ts";
+
 /**
  * Persona, tone, and the hard boundaries for Frank.
  * The boundary check is a high-precision preflight: it catches obvious
@@ -8,7 +10,18 @@
 
 export type ChatRole = "user" | "assistant";
 
-export type Turn = { role: ChatRole; content: string };
+export type Turn = { role: ChatRole; content: string; images?: string[] };
+
+export const PHOTO_TAKE = "I want your take on this photo.";
+
+export type XaiContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail: "auto" } };
+
+export type XaiMessage = {
+  role: "system" | ChatRole;
+  content: string | XaiContentPart[];
+};
 
 export const MAX_THREAD = 16;
 export const MAX_CHARS = 2000;
@@ -63,8 +76,11 @@ function moodLine(mood: Mood): string {
   }
 }
 
-export function systemPrompt(mood: Mood): string {
-  return `${PERSONA}\n\n${moodLine(mood)}`;
+const PHOTO_GUIDE = `When the user includes a photo, react to what you actually see, as Frank, in the tone above. Be specific. Do not give a dry caption, and do not claim you cannot see the photo. If anyone in the photo appears to be under 18, refuse in one sentence and do not describe the photo. The hard boundaries still apply to everything in the photo.`;
+
+export function systemPrompt(mood: Mood, seeingPhotos = false): string {
+  const base = `${PERSONA}\n\n${moodLine(mood)}`;
+  return seeingPhotos ? `${base}\n\n${PHOTO_GUIDE}` : base;
 }
 
 export type BoundaryKind =
@@ -198,13 +214,77 @@ export type FrankAssessment =
   | { kind: "refusal"; text: string }
   | { kind: "ready"; messages: Turn[]; mood: Mood };
 
+function withPhotoNote(content: string, count: number): string {
+  const note = count === 1 ? "(sent a photo)" : `(sent ${count} photos)`;
+  const trimmed = content.trim();
+  if (!trimmed) return note;
+  if (trimmed.endsWith(note)) return trimmed;
+  return `${trimmed}\n${note}`;
+}
+
+/** Keep the newest photos for the model call. Older ones stay on the device and become a short note. */
+export function capImageParts(messages: Turn[]): Turn[] {
+  let budget = MAX_IMAGES_PER_REQUEST;
+  const next: Turn[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const turn = messages[index];
+    if (!turn) continue;
+    if (turn.role !== "user" || !turn.images?.length) {
+      next.push({ role: turn.role, content: turn.content });
+      continue;
+    }
+    if (budget <= 0) {
+      next.push({ role: "user", content: withPhotoNote(turn.content, turn.images.length) });
+      continue;
+    }
+    const images = turn.images.slice(0, budget);
+    budget -= images.length;
+    const omitted = turn.images.length - images.length;
+    next.push({
+      role: "user",
+      content: omitted > 0 ? withPhotoNote(turn.content, omitted) : turn.content,
+      images,
+    });
+  }
+  return next.reverse();
+}
+
+/** OpenAI-style chat content. Photos are image_url data URLs; text-only turns stay strings. */
+export function toXaiMessages(mood: Mood, messages: Turn[]): XaiMessage[] {
+  const capped = capImageParts(messages);
+  const seeing = capped.some((turn) => turn.role === "user" && (turn.images?.length ?? 0) > 0);
+  const out: XaiMessage[] = [{ role: "system", content: systemPrompt(mood, seeing) }];
+  for (const turn of capped) {
+    if (!turn) continue;
+    if (turn.role === "user" && turn.images?.length) {
+      out.push({
+        role: "user",
+        content: [
+          ...turn.images.map((url) => ({
+            type: "image_url" as const,
+            image_url: { url, detail: "auto" as const },
+          })),
+          { type: "text" as const, text: turn.content.trim() || PHOTO_TAKE },
+        ],
+      });
+      continue;
+    }
+    out.push({ role: turn.role, content: turn.content });
+  }
+  return out;
+}
+
 function parseTurn(item: unknown): Turn | string {
   if (!item || typeof item !== "object") return "Bad message.";
-  const turn = item as { role?: unknown; content?: unknown };
+  const turn = item as { role?: unknown; content?: unknown; images?: unknown };
   if (turn.role !== "user" && turn.role !== "assistant") return "Bad message.";
   if (typeof turn.content !== "string") return "Bad message.";
   const content = turn.content.trim();
-  if (!content || content.length > MAX_CHARS) return "Keep each message under 2000 characters.";
+  if (content.length > MAX_CHARS) return "Keep each message under 2000 characters.";
+  const images = parseUserImages(turn.role, turn.images);
+  if (typeof images === "string") return images;
+  if (!content && !images) return "Send a message first.";
+  if (images) return { role: turn.role, content, images };
   return { role: turn.role, content };
 }
 

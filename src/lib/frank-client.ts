@@ -1,5 +1,7 @@
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
-import type { ChatRole, Mood } from "@/lib/frank-policy";
+import { toModelDataUrl } from "@/lib/frank-image";
+import { MEDIA_LARGE_ERROR, MEDIA_PREPARE_ERROR, MEDIA_TYPE_ERROR } from "@/lib/frank-media";
+import { capImageParts, type ChatRole, type Mood, type Turn } from "@/lib/frank-policy";
 import { consumeFrankSse } from "@/lib/frank-stream";
 
 export type FrankReplyResult =
@@ -22,19 +24,54 @@ export async function fetchFrankStatus(signal?: AbortSignal): Promise<boolean | 
   }
 }
 
+async function prepareFrankTurns(
+  messages: { role: ChatRole; content: string; images?: string[] }[],
+): Promise<Turn[]> {
+  const capped = capImageParts(
+    messages.map((message) =>
+      message.images?.length
+        ? { role: message.role, content: message.content, images: message.images }
+        : { role: message.role, content: message.content },
+    ),
+  );
+  const prepared: Turn[] = [];
+  for (const turn of capped) {
+    if (!turn.images?.length) {
+      prepared.push({ role: turn.role, content: turn.content });
+      continue;
+    }
+    const images: string[] = [];
+    for (const url of turn.images) images.push(await toModelDataUrl(url));
+    prepared.push({ role: turn.role, content: turn.content, images });
+  }
+  return prepared;
+}
+
 export async function requestFrankReply(args: {
-  messages: { role: ChatRole; content: string }[];
+  messages: { role: ChatRole; content: string; images?: string[] }[];
   mood: Mood;
   signal?: AbortSignal;
   onDelta: (text: string) => void;
 }): Promise<FrankReplyResult> {
+  let messages: Turn[];
+  try {
+    if (args.signal?.aborted) return { ok: false, aborted: true };
+    messages = await prepareFrankTurns(args.messages);
+  } catch (error) {
+    if (args.signal?.aborted) return { ok: false, aborted: true };
+    const reason = error instanceof Error ? error.message : "";
+    if (reason === "large") return { ok: false, error: MEDIA_LARGE_ERROR };
+    if (reason === "type") return { ok: false, error: MEDIA_TYPE_ERROR };
+    return { ok: false, error: MEDIA_PREPARE_ERROR };
+  }
+
   let response: Response;
   try {
     response = await fetch(frankApiPath(), {
       method: "POST",
       signal: args.signal,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: args.messages, mood: args.mood }),
+      body: JSON.stringify({ messages, mood: args.mood }),
     });
   } catch {
     if (args.signal?.aborted) return { ok: false, aborted: true };
