@@ -2,14 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { FRANK_DESCRIPTION, HEADER_LINE, INTRO_BODY, AGE_NOTE } from "./frank-copy.ts";
+import { sniffImageKind } from "./frank-media.ts";
 import {
   assessFrankRequest,
   boundaryViolation,
+  capImageParts,
   MOODS,
+  PHOTO_TAKE,
   REFUSAL,
   systemPrompt,
+  toXaiMessages,
   type BoundaryKind,
 } from "./frank-policy.ts";
+
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const ALLOWED = [
   "fuck me harder, baby",
@@ -141,6 +148,14 @@ describe("systemPrompt", () => {
     assert.ok(sweet.includes("Hard boundaries"));
     assert.ok(spicy.includes("Hard boundaries"));
   });
+
+  it("adds photo guidance only when a photo is in the turn", () => {
+    assert.doesNotMatch(systemPrompt("playful"), /photo/i);
+    const seeing = systemPrompt("spicy", true);
+    assert.match(seeing, /under 18/);
+    assert.match(seeing, /No minors and no age-play/);
+    assert.match(seeing, /explicit when they invite it/);
+  });
 });
 
 describe("assessFrankRequest", () => {
@@ -203,6 +218,72 @@ describe("assessFrankRequest", () => {
       ],
     });
     assert.equal(endedOnFrank.kind, "invalid");
+  });
+
+  it("accepts a photo and still refuses a caption that crosses a boundary", () => {
+    const ready = assessFrankRequest({
+      mood: "spicy",
+      messages: [{ role: "user", content: "", images: [TINY_PNG] }],
+    });
+    assert.deepEqual(ready, {
+      kind: "ready",
+      mood: "spicy",
+      messages: [{ role: "user", content: "", images: [TINY_PNG] }],
+    });
+
+    const refused = assessFrankRequest({
+      messages: [{ role: "user", content: "she's 16", images: [TINY_PNG] }],
+    });
+    assert.equal(refused.kind, "refusal");
+    if (refused.kind === "refusal") assert.equal(refused.text.includes("16"), false);
+
+    assert.equal(
+      assessFrankRequest({
+        messages: [{ role: "user", content: "look", images: ["https://example.com/a.png"] }],
+      }).kind,
+      "invalid",
+    );
+    assert.equal(
+      assessFrankRequest({
+        messages: [{ role: "assistant", content: "hey", images: [TINY_PNG] }],
+      }).kind,
+      "invalid",
+    );
+    assert.equal(sniffImageKind({ type: "image/webp", name: "shot.webp" }), "webp");
+    assert.equal(sniffImageKind({ type: "", name: "shot.gif" }), "gif");
+    assert.equal(sniffImageKind({ type: "image/heic", name: "IMG_1.HEIC" }), "other");
+  });
+
+  it("sends image parts and keeps only the newest photos on the model call", () => {
+    const older = [TINY_PNG, TINY_PNG, TINY_PNG];
+    const newer = [TINY_PNG, TINY_PNG, TINY_PNG];
+    const capped = capImageParts([
+      { role: "user", content: "first", images: older },
+      { role: "assistant", content: "hey" },
+      { role: "user", content: "second", images: newer },
+    ]);
+    assert.equal(capped[2]?.images?.length, 3);
+    assert.equal(capped[0]?.images?.length, 1);
+    assert.match(capped[0]?.content ?? "", /sent 2 photos/);
+    assert.equal(capped[1]?.images, undefined);
+
+    const payload = toXaiMessages("playful", [{ role: "user", content: "", images: [TINY_PNG] }]);
+    assert.equal(payload[0]?.role, "system");
+    assert.match(String(payload[0]?.content), /under 18/);
+    const user = payload[1];
+    assert.ok(user && Array.isArray(user.content));
+    if (!user || !Array.isArray(user.content)) return;
+    assert.equal(user.content[0]?.type, "image_url");
+    if (user.content[0]?.type === "image_url") {
+      assert.equal(user.content[0].image_url.url, TINY_PNG);
+      assert.equal(user.content[0].image_url.detail, "auto");
+    }
+    assert.deepEqual(user.content[1], { type: "text", text: PHOTO_TAKE });
+
+    const textOnly = toXaiMessages("playful", [{ role: "user", content: "come here" }]);
+    assert.equal(typeof textOnly[0]?.content, "string");
+    assert.doesNotMatch(String(textOnly[0]?.content), /photo/i);
+    assert.deepEqual(textOnly[1], { role: "user", content: "come here" });
   });
 });
 

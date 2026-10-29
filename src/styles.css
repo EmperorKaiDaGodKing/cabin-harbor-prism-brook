@@ -56,6 +56,15 @@
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 
+  .photo-frame {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .photo-stage {
+    touch-action: none;
+  }
+
   .frank-dot {
     animation: frank-pulse 1.2s ease-in-out infinite;
   }
