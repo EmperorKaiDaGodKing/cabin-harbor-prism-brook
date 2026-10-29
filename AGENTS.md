@@ -350,3 +350,14 @@ auth/db: OFF by default — sign-in, @/lib/db or migrations ONLY on an accounts 
 never:   build an app for a greeting/number/question; invent imagine_* calls;
          ask the user to run commands; delete or abandon /workspace/startup.sh
 ```
+
+## Cursor Cloud specific instructions
+
+This checkout is Frank, the TanStack Start app. Cursor Cloud Agents use `.cursor/environment.json`. The Grok sandbox notes above (`/workspace`, `startup.sh`) apply only inside that sandbox.
+
+- A machine that booted from a successful environment build already has `npm ci` and Playwright's Chromium. Re-run `bash .cursor/cloud-install.sh` only when the lockfile changed.
+- The dev server is started on boot by `.cursor/cloud-start.sh` (`npm run dev`, port 8080). If `http://127.0.0.1:8080/` already responds, do not start another copy.
+- `XAI_API_KEY` is optional. Without it the age gate and chat still load, and the chat says the model cannot be reached. Put the key in Cursor secrets to exercise live replies. Do not commit it or create a `.env`.
+- Checks from this repo: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`. `npm run build` skips migrations when `DATABASE_URL` is unset.
+- `scripts/browser-smoke.mjs` only writes screenshots under `/workspace`. That path is the Grok sandbox, not this Cloud Agent workspace.
+- Sibling checkouts in this environment are not installed or started here. From `cloud-albums-links`, `python3 -m unittest discover -s tests` uses fixtures and does not need `PHOTO_FEED_URL`. `Kai_Kings_Google_AI_Studio` has no lockfile; install it separately and set `GEMINI_API_KEY` before `npm run dev` (port 3000).

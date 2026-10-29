@@ -1,0 +1,9 @@
+{
+  "name": "Frank",
+  "install": "[ ! -d '/agent/repos/cabin-harbor-prism-brook' ] || cd '/agent/repos/cabin-harbor-prism-brook' || exit $?; bash .cursor/cloud-install.sh",
+  "start": "[ ! -d '/agent/repos/cabin-harbor-prism-brook' ] || cd '/agent/repos/cabin-harbor-prism-brook' || exit $?; bash .cursor/cloud-start.sh",
+  "ports": [
+    { "name": "Frank", "port": 8080 }
+  ],
+  "chromeExecutablePath": "/usr/bin/google-chrome"
+}
