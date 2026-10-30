@@ -1,0 +1,14 @@
+python - <<'PY'
+from src.voice_media import validate_media
+from pathlib import Path
+
+fake_path = Path("data/media/uploads/too_long_fake.wav")
+fake_path.parent.mkdir(parents=True, exist_ok=True)
+fake_path.write_bytes(b"not_a_real_wav")
+
+try:
+    validate_media(fake_path)
+    print("unexpected success")
+except Exception as e:
+    print(type(e).__name__, e)
+PY
