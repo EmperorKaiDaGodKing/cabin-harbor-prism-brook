@@ -1,0 +1,18 @@
+python - <<'PY'
+from pathlib import Path
+from src.voice_media import validate_media, save_upload, generate_voice_reply, list_recent_media
+
+audio_path = Path("data/media/uploads/test_voice.wav")
+
+print("VALIDATE")
+print(validate_media(audio_path))
+
+print("UPLOAD")
+print(save_upload(audio_path))
+
+print("REPLY")
+print(generate_voice_reply("Frank dry test reply: voice and media flow is active."))
+
+print("RECENT")
+print(list_recent_media(10))
+PY
