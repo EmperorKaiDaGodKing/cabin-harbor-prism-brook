@@ -1,0 +1,25 @@
+python - <<'PY'
+import wave, math
+from pathlib import Path
+
+path = Path("data/media/uploads/test_voice.wav")
+path.parent.mkdir(parents=True, exist_ok=True)
+
+sample_rate = 8000
+seconds = 2
+total_frames = sample_rate * seconds
+amplitude = 32767
+
+with wave.open(str(path), "wb") as wav:
+    wav.setnchannels(1)
+    wav.setsampwidth(2)
+    wav.setframerate(sample_rate)
+
+    data = bytearray()
+    for i in range(total_frames):
+        value = int(amplitude * 0.5 * math.sin(2 * math.pi * 440 * i / sample_rate))
+        data.extend(value.to_bytes(2, byteorder="little", signed=True))
+    wav.writeframes(data)
+
+print(path)
+PY
