@@ -27,7 +27,11 @@ function parseStoredImages(value: unknown): ChatImage[] | undefined {
     const image = item as Partial<ChatImage>;
     if (typeof image.id !== "string" || image.id.length === 0 || image.id.length > 80) continue;
     if (typeof image.dataUrl !== "string" || !isDisplayImageDataUrl(image.dataUrl)) continue;
-    images.push({ id: image.id, dataUrl: image.dataUrl });
+    images.push({
+      id: image.id,
+      dataUrl: image.dataUrl,
+      ...(image.clip === true ? { clip: true as const } : {}),
+    });
     if (images.length >= MAX_IMAGES_PER_MESSAGE) break;
   }
   return images.length > 0 ? images : undefined;
@@ -71,7 +75,13 @@ export function fitThreadForStorage(messages: ChatMessage[]): ChatMessage[] {
     content: message.content,
     at: message.at,
     ...(message.images?.length
-      ? { images: message.images.map((image) => ({ id: image.id, dataUrl: image.dataUrl })) }
+      ? {
+          images: message.images.map((image) => ({
+            id: image.id,
+            dataUrl: image.dataUrl,
+            ...(image.clip ? { clip: true as const } : {}),
+          })),
+        }
       : {}),
   }));
 

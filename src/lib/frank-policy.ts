@@ -76,7 +76,7 @@ function moodLine(mood: Mood): string {
   }
 }
 
-const PHOTO_GUIDE = `When the user includes a photo, react to what you actually see, as Frank, in the tone above. Be specific. Do not give a dry caption, and do not claim you cannot see the photo. If anyone in the photo appears to be under 18, refuse in one sentence and do not describe the photo. The hard boundaries still apply to everything in the photo.`;
+const PHOTO_GUIDE = `When the user includes a photo, react to what you actually see, as Frank, in the tone above. Be specific. Do not give a dry caption, and do not claim you cannot see the photo. If anyone in the photo appears to be under 18, refuse in one sentence and do not describe the photo. The hard boundaries still apply to everything in the photo. If the user says the pictures are frames from a short video, treat them as one clip in time order.`;
 
 export function systemPrompt(mood: Mood, seeingPhotos = false): string {
   const base = `${PERSONA}\n\n${moodLine(mood)}`;

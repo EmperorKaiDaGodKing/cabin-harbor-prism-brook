@@ -19,3 +19,6 @@ screenshots/*
 
 # Exported workspace archives
 attachments/
+
+# Local clip and voice-note scratch from the audio scripts
+data/

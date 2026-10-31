@@ -60,6 +60,18 @@ Only the four newest photos in the thread are sent again on a later turn, so a f
 
 Photos are not written on the server and are not logged. They live in the same on-device thread as the text. Clearing the chat removes them. A very long thread drops the oldest photos from device storage before the text.
 
+## Clips
+
+A message can include one short video: mp4, webm, or mov, up to 10 seconds and 20 MB. The clip is not uploaded and is not kept. The browser takes up to four stills and sends those through the same photo path, so Frank sees the clip as frames. The stills stay in the on-device thread with the photos.
+
+Chat models on xAI accept images, not a video file, in the reply request. The stills are the way a clip reaches Frank.
+
+## Voice
+
+The microphone turns a voice note into text in the composer. With `XAI_API_KEY`, that note is transcribed by xAI speech-to-text (`POST /v1/stt`) and you can edit it before sending. Without the key, browsers that support the Web Speech API dictate straight into the composer. Notes are capped at about 20 seconds. The audio is not stored.
+
+The speaker control speaks Frank's replies. With the key, speech uses xAI text-to-speech (`POST /v1/tts`) in the voice chosen at the top of the chat (Rex by default). If that call fails, the browser's own speech synthesis speaks the line. A reply that crosses the hard boundaries is not spoken. "Hear it" under the latest reply plays it again. The voice and the speaker switch are remembered on this device.
+
 ## Scripts
 
 ```bash

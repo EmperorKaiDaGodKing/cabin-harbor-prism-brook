@@ -27,6 +27,8 @@ export const MEDIA_PREPARE_ERROR = "Could not prepare that photo. Try once more.
 export type ChatImage = {
   id: string;
   dataUrl: string;
+  /** Stills taken from one short clip, in time order. */
+  clip?: true;
 };
 
 export type ImageKind = "jpeg" | "png" | "webp" | "gif" | "other";

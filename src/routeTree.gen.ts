@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiFrankRouteImport } from './routes/api/frank'
+import { Route as ApiFrankSpeakRouteImport } from './routes/api/frank.speak'
+import { Route as ApiFrankTranscribeRouteImport } from './routes/api/frank.transcribe'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +24,52 @@ const ApiFrankRoute = ApiFrankRouteImport.update({
   path: '/api/frank',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiFrankSpeakRoute = ApiFrankSpeakRouteImport.update({
+  id: '/speak',
+  path: '/speak',
+  getParentRoute: () => ApiFrankRoute,
+} as any)
+const ApiFrankTranscribeRoute = ApiFrankTranscribeRouteImport.update({
+  id: '/transcribe',
+  path: '/transcribe',
+  getParentRoute: () => ApiFrankRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/api/frank': typeof ApiFrankRoute
+  '/api/frank': typeof ApiFrankRouteWithChildren
+  '/api/frank/speak': typeof ApiFrankSpeakRoute
+  '/api/frank/transcribe': typeof ApiFrankTranscribeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/api/frank': typeof ApiFrankRoute
+  '/api/frank': typeof ApiFrankRouteWithChildren
+  '/api/frank/speak': typeof ApiFrankSpeakRoute
+  '/api/frank/transcribe': typeof ApiFrankTranscribeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/api/frank': typeof ApiFrankRoute
+  '/api/frank': typeof ApiFrankRouteWithChildren
+  '/api/frank/speak': typeof ApiFrankSpeakRoute
+  '/api/frank/transcribe': typeof ApiFrankTranscribeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/frank'
+  fullPaths: '/' | '/api/frank' | '/api/frank/speak' | '/api/frank/transcribe'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/frank'
-  id: '__root__' | '/' | '/api/frank'
+  to: '/' | '/api/frank' | '/api/frank/speak' | '/api/frank/transcribe'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/frank'
+    | '/api/frank/speak'
+    | '/api/frank/transcribe'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ApiFrankRoute: typeof ApiFrankRoute
+  ApiFrankRoute: typeof ApiFrankRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +88,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFrankRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/frank/speak': {
+      id: '/api/frank/speak'
+      path: '/speak'
+      fullPath: '/api/frank/speak'
+      preLoaderRoute: typeof ApiFrankSpeakRouteImport
+      parentRoute: typeof ApiFrankRoute
+    }
+    '/api/frank/transcribe': {
+      id: '/api/frank/transcribe'
+      path: '/transcribe'
+      fullPath: '/api/frank/transcribe'
+      preLoaderRoute: typeof ApiFrankTranscribeRouteImport
+      parentRoute: typeof ApiFrankRoute
+    }
   }
 }
 
+interface ApiFrankRouteChildren {
+  ApiFrankSpeakRoute: typeof ApiFrankSpeakRoute
+  ApiFrankTranscribeRoute: typeof ApiFrankTranscribeRoute
+}
+
+const ApiFrankRouteChildren: ApiFrankRouteChildren = {
+  ApiFrankSpeakRoute: ApiFrankSpeakRoute,
+  ApiFrankTranscribeRoute: ApiFrankTranscribeRoute,
+}
+
+const ApiFrankRouteWithChildren = ApiFrankRoute._addFileChildren(
+  ApiFrankRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ApiFrankRoute: ApiFrankRoute,
+  ApiFrankRoute: ApiFrankRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
