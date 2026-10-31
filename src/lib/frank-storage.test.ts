@@ -43,6 +43,15 @@ describe("frank storage", () => {
     assert.equal(stored?.images?.length, 2);
     assert.equal(stored?.images?.[0]?.dataUrl, png);
 
+    const clip = frank.newMessage(
+      "user",
+      "These are frames from a short video.",
+      crypto.randomUUID(),
+      [{ id: "frame-1", dataUrl: png, clip: true }],
+    );
+    frank.saveThread([clip]);
+    assert.equal(frank.loadThread()[0]?.images?.[0]?.clip, true);
+
     const huge = `data:image/jpeg;base64,${"A".repeat(1_500_000)}`;
     memory.set(
       "frank.chat.v1",

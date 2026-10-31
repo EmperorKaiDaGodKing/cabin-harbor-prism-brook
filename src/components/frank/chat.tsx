@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, X } from "lucide-react";
+import { Film, ImagePlus, Mic, Volume2, VolumeX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FrankMark } from "@/components/frank/mark";
 import { ImageViewer } from "@/components/frank/image-viewer";
 import { fetchFrankStatus, requestFrankReply } from "@/lib/frank-client";
 import { HEADER_LINE, INTRO_BODY, INTRO_TITLE, OFFLINE_NOTE } from "@/lib/frank-copy";
+import { CLIP_CAPTION, CLIP_FRAME_COUNT, clipCaptionForModel, sniffClip } from "@/lib/frank-clip";
 import { prepareChatImage } from "@/lib/frank-image";
 import {
   MAX_IMAGES_PER_MESSAGE,
@@ -12,6 +13,18 @@ import {
   sniffImageKind,
   type ChatImage,
 } from "@/lib/frank-media";
+import {
+  canRecognize,
+  canRecord,
+  framesFromClip,
+  playReply,
+  startRecognition,
+  startRecording,
+  stopPlayback,
+  transcribeNote,
+  unlockTalkAudio,
+  type ListenSession,
+} from "@/lib/frank-talk";
 import {
   loadMood,
   loadThread,
@@ -23,6 +36,15 @@ import {
   type ChatMessage,
 } from "@/lib/frank";
 import { MOODS, type Mood } from "@/lib/frank-policy";
+import {
+  FRANK_VOICES,
+  isFrankVoice,
+  loadSpeak,
+  loadVoice,
+  saveSpeak,
+  saveVoice,
+  type FrankVoiceId,
+} from "@/lib/frank-voice";
 
 const fieldClass =
   "w-full resize-none rounded-lg border border-line bg-paper px-3 py-3 text-base text-ink outline-none placeholder:text-muted focus-visible:border-sienna focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sienna";
@@ -40,6 +62,7 @@ const TONE_HINT: Record<Mood, string> = {
 };
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif";
+const CLIP_ACCEPT = "video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v";
 
 function dragHasFiles(data: DataTransfer): boolean {
   const types = data.types;
@@ -86,21 +109,34 @@ export function FrankChat() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [prepareNote, setPrepareNote] = useState("");
+  const [listening, setListening] = useState(false);
+  const [speakOn, setSpeakOn] = useState(false);
+  const [voiceId, setVoiceId] = useState<FrankVoiceId>("rex");
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const clipInput = useRef<HTMLInputElement>(null);
   const stick = useRef(true);
   const requestRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const dragDepth = useRef(0);
   const attachmentsRef = useRef<ChatImage[]>([]);
   const ingestGen = useRef(0);
+  const listenGen = useRef(0);
+  const listenStop = useRef<ListenSession | null>(null);
+  const speakOnRef = useRef(false);
+  const voiceRef = useRef<FrankVoiceId>("rex");
 
   attachmentsRef.current = attachments;
+  speakOnRef.current = speakOn;
+  voiceRef.current = voiceId;
 
   useEffect(() => {
     setMessages(loadThread());
     setMood(loadMood());
+    setSpeakOn(loadSpeak());
+    setVoiceId(loadVoice());
     setReady(true);
     const abort = new AbortController();
     void fetchFrankStatus(abort.signal).then((value) => {
@@ -130,6 +166,23 @@ export function FrankChat() {
   }, [mood, ready]);
 
   useEffect(() => {
+    if (!ready) return;
+    saveSpeak(speakOn);
+  }, [speakOn, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    saveVoice(voiceId);
+  }, [voiceId, ready]);
+
+  useEffect(() => {
+    return () => {
+      listenStop.current?.stop();
+      stopPlayback();
+    };
+  }, []);
+
+  useEffect(() => {
     const node = scroller.current;
     if (!node || !stick.current) return;
     node.scrollTop = node.scrollHeight;
@@ -155,10 +208,14 @@ export function FrankChat() {
 
     const assistantId = crypto.randomUUID();
     let started = false;
+    let spoken = "";
     const result = await requestFrankReply({
       messages: thread.slice(-MAX_THREAD).map((message) => ({
         role: message.role,
-        content: message.content,
+        content: clipCaptionForModel(
+          message.content,
+          message.images?.some((image) => image.clip) ?? false,
+        ),
         ...(message.images?.length ? { images: message.images.map((image) => image.dataUrl) } : {}),
       })),
       mood,
@@ -166,6 +223,7 @@ export function FrankChat() {
       onDelta: (chunk) => {
         if (requestRef.current !== requestId) return;
         started = true;
+        spoken += chunk;
         setMessages((current) => {
           const prior = current.filter((message) => message.id !== assistantId);
           const existing = current.find((message) => message.id === assistantId);
@@ -186,18 +244,25 @@ export function FrankChat() {
       setCanRetry(true);
       return;
     }
+    if (speakOnRef.current && spoken.trim()) {
+      unlockTalkAudio();
+      void playReply(spoken, voiceRef.current);
+    }
     box.current?.focus();
   }
 
   async function send() {
-    const text = draft.trim();
-    if (pending || preparing || configured === false) return;
+    const typed = draft.trim();
+    const clip = attachments.some((image) => image.clip);
+    const text = typed || (clip ? CLIP_CAPTION : "");
+    if (pending || preparing || listening || configured === false) return;
     if (!text && attachments.length === 0) return;
     if (text.length > MAX_CHARS) {
       setError("Keep it under 2000 characters.");
       setCanRetry(false);
       return;
     }
+    if (speakOnRef.current) unlockTalkAudio();
     const next = [...messages, newMessage("user", text, crypto.randomUUID(), attachments)].slice(
       -80,
     );
@@ -216,6 +281,10 @@ export function FrankChat() {
 
   function clearChat() {
     ingestGen.current += 1;
+    listenGen.current += 1;
+    listenStop.current?.stop();
+    listenStop.current = null;
+    stopPlayback();
     requestRef.current += 1;
     abortRef.current?.abort();
     setMessages([]);
@@ -227,17 +296,112 @@ export function FrankChat() {
     setConfirmClear(false);
     setPending(false);
     setPreparing(false);
+    setPrepareNote("");
+    setListening(false);
   }
 
-  async function addFiles(list: File[]) {
-    if (configured === false || pending) return;
-    const incoming = list.filter((file) => file.size > 0);
-    if (incoming.length === 0) return;
-    const gen = ingestGen.current + 1;
-    ingestGen.current = gen;
-    setPreparing(true);
+  function appendDraft(text: string) {
+    setDraft((current) => {
+      const next = current.trim() ? `${current.trim()} ${text}` : text;
+      return next.slice(0, MAX_CHARS);
+    });
+  }
+
+  function stopListening() {
+    listenGen.current += 1;
+    listenStop.current?.stop();
+    listenStop.current = null;
+    setListening(false);
+  }
+
+  function beginListen(session: ListenSession | { error: string }) {
+    if ("error" in session) {
+      setError(session.error);
+      setCanRetry(false);
+      setListening(false);
+      return;
+    }
+    listenStop.current = session;
+    setListening(true);
     setError("");
     setCanRetry(false);
+  }
+
+  function toggleMic() {
+    if (preparing || pending) return;
+    if (listening) {
+      stopListening();
+      return;
+    }
+    unlockTalkAudio();
+    const gen = listenGen.current + 1;
+    listenGen.current = gen;
+    if (configured === true && canRecord()) {
+      beginListen(
+        startRecording({
+          onBlob: (blob) => {
+            if (listenGen.current !== gen) return;
+            setListening(false);
+            listenStop.current = null;
+            void takeNote(blob, gen);
+          },
+          onError: (message) => {
+            if (listenGen.current !== gen) return;
+            setListening(false);
+            listenStop.current = null;
+            setError(message);
+            setCanRetry(false);
+          },
+        }),
+      );
+      return;
+    }
+    if (canRecognize()) {
+      beginListen(
+        startRecognition({
+          onText: (text) => {
+            if (listenGen.current !== gen) return;
+            setListening(false);
+            listenStop.current = null;
+            appendDraft(text);
+          },
+          onError: (message) => {
+            if (listenGen.current !== gen) return;
+            setListening(false);
+            listenStop.current = null;
+            setError(message);
+            setCanRetry(false);
+          },
+        }),
+      );
+      return;
+    }
+    setError("This browser can't take a voice note. Type it instead.");
+    setCanRetry(false);
+  }
+
+  async function takeNote(blob: Blob, gen: number) {
+    setPrepareNote("Transcribing…");
+    setPreparing(true);
+    const result = await transcribeNote(blob);
+    if (listenGen.current !== gen) return;
+    setPreparing(false);
+    setPrepareNote("");
+    if (!result.ok) {
+      setError(result.error);
+      setCanRetry(false);
+      return;
+    }
+    appendDraft(result.text);
+  }
+
+  function hear(text: string) {
+    unlockTalkAudio();
+    void playReply(text, voiceRef.current);
+  }
+
+  async function addImages(incoming: File[]) {
+    const gen = ingestGen.current;
     let message = "";
     const next = [...attachmentsRef.current];
     for (const file of incoming) {
@@ -256,9 +420,76 @@ export function FrankChat() {
       attachmentsRef.current = next;
       setAttachments([...next]);
     }
-    if (ingestGen.current !== gen) return;
     if (message) setError(message);
+  }
+
+  async function addClip(file: File) {
+    const room = MAX_IMAGES_PER_MESSAGE - attachmentsRef.current.length;
+    if (room <= 0) {
+      setError(MEDIA_COUNT_ERROR);
+      setCanRetry(false);
+      return;
+    }
+    const gen = ingestGen.current;
+    setPrepareNote("Preparing the clip…");
+    const frames = await framesFromClip(file, Math.min(CLIP_FRAME_COUNT, room));
+    if (ingestGen.current !== gen) return;
+    if (!frames.ok) {
+      setError(frames.error);
+      setCanRetry(false);
+      return;
+    }
+    const next = [...attachmentsRef.current];
+    let message = "";
+    for (const [index, blob] of frames.blobs.entries()) {
+      if (ingestGen.current !== gen) return;
+      if (next.length >= MAX_IMAGES_PER_MESSAGE) {
+        message = MEDIA_COUNT_ERROR;
+        break;
+      }
+      const result = await prepareChatImage(
+        new File([blob], `frame-${index + 1}.jpg`, { type: "image/jpeg" }),
+      );
+      if (ingestGen.current !== gen) return;
+      if (!result.ok) {
+        message = result.error;
+        continue;
+      }
+      next.push({ ...result.image, clip: true });
+      attachmentsRef.current = next;
+      setAttachments([...next]);
+    }
+    if (message) setError(message);
+  }
+
+  async function addFiles(list: File[]) {
+    if (configured === false || pending || listening) return;
+    const images: File[] = [];
+    const clips: File[] = [];
+    for (const file of list) {
+      if (file.size <= 0) continue;
+      if (sniffClip(file) !== "other") clips.push(file);
+      else images.push(file);
+    }
+    if (images.length === 0 && clips.length === 0) return;
+    const gen = ingestGen.current + 1;
+    ingestGen.current = gen;
+    setPreparing(true);
+    setError("");
+    setCanRetry(false);
+    if (images.length > 0) {
+      setPrepareNote("Preparing the photo…");
+      await addImages(images);
+    }
+    if (ingestGen.current === gen) {
+      for (const clip of clips) {
+        if (ingestGen.current !== gen) break;
+        await addClip(clip);
+      }
+    }
+    if (ingestGen.current !== gen) return;
     setPreparing(false);
+    setPrepareNote("");
   }
 
   function removeAttachment(id: string) {
@@ -266,7 +497,7 @@ export function FrankChat() {
   }
 
   function openPicker() {
-    if (configured === false || pending || preparing) return;
+    if (configured === false || pending || preparing || listening) return;
     if (attachments.length >= MAX_IMAGES_PER_MESSAGE) {
       setError(MEDIA_COUNT_ERROR);
       setCanRetry(false);
@@ -275,14 +506,26 @@ export function FrankChat() {
     fileInput.current?.click();
   }
 
+  function openClipPicker() {
+    if (configured === false || pending || preparing || listening) return;
+    if (attachments.length >= MAX_IMAGES_PER_MESSAGE) {
+      setError(MEDIA_COUNT_ERROR);
+      setCanRetry(false);
+      return;
+    }
+    clipInput.current?.click();
+  }
+
   const showTyping = pending && messages[messages.length - 1]?.role !== "assistant";
   const photos = galleryPhotos(messages);
   const openIndex = photos.findIndex((photo) => photo.id === openId);
   const canSend =
     !pending &&
     !preparing &&
+    !listening &&
     configured !== false &&
     (draft.trim().length > 0 || attachments.length > 0);
+  const lastSpokenId = [...messages].reverse().find((message) => message.role === "assistant")?.id;
 
   return (
     <main className="mx-auto flex h-dvh w-full max-w-2xl flex-col px-4">
@@ -315,6 +558,7 @@ export function FrankChat() {
           )}
         </div>
         <MoodPicker mood={mood} disabled={pending} onChange={setMood} />
+        <VoicePicker voiceId={voiceId} disabled={pending} onChange={setVoiceId} />
       </header>
 
       <div
@@ -333,7 +577,16 @@ export function FrankChat() {
           </div>
         ) : (
           messages.map((message) => (
-            <Bubble key={message.id} message={message} onOpen={setOpenId} />
+            <Bubble
+              key={message.id}
+              message={message}
+              onOpen={setOpenId}
+              onHear={
+                speakOn && !pending && message.content.trim() && message.id === lastSpokenId
+                  ? () => hear(message.content)
+                  : undefined
+              }
+            />
           ))
         )}
         {showTyping ? <Typing /> : null}
@@ -387,12 +640,17 @@ export function FrankChat() {
             className="mb-3 rounded-lg border border-dashed border-sienna bg-sheet px-3 py-3 text-sm text-ink"
             role="status"
           >
-            Drop the photo
+            Drop a photo or a short clip
           </p>
         ) : null}
-        {preparing ? (
+        {listening ? (
           <p className="mb-3 text-sm text-muted" role="status">
-            Preparing the photo…
+            Listening…
+          </p>
+        ) : null}
+        {prepareNote ? (
+          <p className="mb-3 text-sm text-muted" role="status">
+            {prepareNote}
           </p>
         ) : null}
         {error ? (
@@ -414,18 +672,29 @@ export function FrankChat() {
           </div>
         ) : null}
         {attachments.length > 0 ? (
-          <ul className="mb-3 flex gap-3 overflow-x-auto pt-3 pr-3" aria-label="Photos to send">
+          <ul
+            className="mb-3 flex gap-3 overflow-x-auto pt-3 pr-3"
+            aria-label={
+              attachments.some((image) => image.clip) ? "Clip frames to send" : "Photos to send"
+            }
+          >
             {attachments.map((image, index) => (
               <li key={image.id} className="relative shrink-0">
                 <img
                   src={image.dataUrl}
-                  alt={`Photo ${index + 1} to send`}
+                  alt={
+                    image.clip
+                      ? `Frame ${index + 1} of the clip to send`
+                      : `Photo ${index + 1} to send`
+                  }
                   className="size-20 rounded-lg object-cover"
                 />
                 <button
                   type="button"
                   className="absolute -top-2 -right-2 flex size-11 items-center justify-center"
-                  aria-label={`Remove photo ${index + 1}`}
+                  aria-label={
+                    image.clip ? `Remove frame ${index + 1}` : `Remove photo ${index + 1}`
+                  }
                   onClick={() => removeAttachment(image.id)}
                 >
                   <span className="flex size-6 items-center justify-center rounded-full bg-ink text-on-sienna">
@@ -462,15 +731,53 @@ export function FrankChat() {
             }}
           />
         </label>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             <Button
               className="w-11 shrink-0 px-0"
+              intent="quiet"
               aria-label="Add a photo"
               onClick={openPicker}
-              disabled={configured === false || pending || preparing}
+              disabled={configured === false || pending || preparing || listening}
             >
               <ImagePlus className="size-5" aria-hidden="true" />
+            </Button>
+            <Button
+              className="w-11 shrink-0 px-0"
+              intent="quiet"
+              aria-label="Add a short clip"
+              onClick={openClipPicker}
+              disabled={configured === false || pending || preparing || listening}
+            >
+              <Film className="size-5" aria-hidden="true" />
+            </Button>
+            <Button
+              className="w-11 shrink-0 px-0"
+              intent={listening ? "primary" : "quiet"}
+              aria-label={listening ? "Stop listening" : "Speak a message"}
+              aria-pressed={listening}
+              onClick={toggleMic}
+              disabled={preparing || pending}
+            >
+              <Mic className="size-5" aria-hidden="true" />
+            </Button>
+            <Button
+              className="w-11 shrink-0 px-0"
+              intent={speakOn ? "primary" : "quiet"}
+              aria-label={speakOn ? "Frank speaks replies" : "Frank stays quiet"}
+              aria-pressed={speakOn}
+              onClick={() => {
+                const next = !speakOn;
+                if (next) unlockTalkAudio();
+                else stopPlayback();
+                setSpeakOn(next);
+              }}
+            >
+              {speakOn ? (
+                <Volume2 className="size-5" aria-hidden="true" />
+              ) : (
+                <VolumeX className="size-5" aria-hidden="true" />
+              )}
             </Button>
             <input
               ref={fileInput}
@@ -486,19 +793,33 @@ export function FrankChat() {
                 void addFiles(files);
               }}
             />
-            <p className="min-w-0 text-xs text-muted">
-              <span className="sm:hidden">
-                {draft.length} / {MAX_CHARS}
-              </span>
-              <span className="hidden sm:inline">
-                Paste a photo. Enter sends. Shift+Enter for a new line. {draft.length} / {MAX_CHARS}
-              </span>
-            </p>
+            <input
+              ref={clipInput}
+              className="sr-only"
+              type="file"
+              accept={CLIP_ACCEPT}
+              aria-hidden="true"
+              tabIndex={-1}
+              onChange={(event) => {
+                const files = event.target.files ? [...event.target.files] : [];
+                event.target.value = "";
+                void addFiles(files);
+              }}
+            />
           </div>
           <Button type="submit" className="shrink-0" disabled={!canSend}>
             Send
           </Button>
         </div>
+        <p className="mt-2 text-xs text-muted">
+          <span className="sm:hidden">
+            {draft.length} / {MAX_CHARS}
+          </span>
+          <span className="hidden sm:inline">
+            Photo, clip, or mic. Enter sends. Shift+Enter for a new line. {draft.length} /{" "}
+            {MAX_CHARS}
+          </span>
+        </p>
       </form>
       {openIndex >= 0 ? (
         <ImageViewer
@@ -551,6 +872,37 @@ function MoodPicker({
   );
 }
 
+function VoicePicker({
+  voiceId,
+  disabled,
+  onChange,
+}: {
+  voiceId: FrankVoiceId;
+  disabled: boolean;
+  onChange: (voice: FrankVoiceId) => void;
+}) {
+  return (
+    <label className="mt-4 block" htmlFor="frank-voice">
+      <span className="text-xs font-semibold tracking-widest text-muted uppercase">Voice</span>
+      <select
+        id="frank-voice"
+        className="mt-2 h-11 w-full rounded-lg border border-line bg-sheet px-3 text-base text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sienna disabled:opacity-60"
+        value={voiceId}
+        disabled={disabled}
+        onChange={(event) => {
+          if (isFrankVoice(event.target.value)) onChange(event.target.value);
+        }}
+      >
+        {FRANK_VOICES.map((voice) => (
+          <option key={voice.id} value={voice.id}>
+            {voice.label} — {voice.hint}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function Intro() {
   return (
     <div className="rounded-xl border border-line bg-sheet px-4 py-6">
@@ -580,9 +932,18 @@ function Typing() {
   );
 }
 
-function Bubble({ message, onOpen }: { message: ChatMessage; onOpen: (id: string) => void }) {
+function Bubble({
+  message,
+  onOpen,
+  onHear,
+}: {
+  message: ChatMessage;
+  onOpen: (id: string) => void;
+  onHear?: () => void;
+}) {
   const mine = message.role === "user";
   const images = message.images ?? [];
+  const clip = images.some((image) => image.clip);
   return (
     <div className={mine ? "flex justify-end" : "flex justify-start"}>
       <div className="max-w-[85%]">
@@ -594,6 +955,9 @@ function Bubble({ message, onOpen }: { message: ChatMessage; onOpen: (id: string
           }
         >
           <span className="sr-only">{mine ? "You said: " : "Frank said: "}</span>
+          {clip ? (
+            <p className="mb-2 text-xs font-semibold tracking-widest uppercase">Clip</p>
+          ) : null}
           {images.length > 0 ? (
             <div className={images.length > 1 ? "grid grid-cols-2 gap-2" : ""}>
               {images.map((image, index) => (
@@ -605,7 +969,13 @@ function Bubble({ message, onOpen }: { message: ChatMessage; onOpen: (id: string
                 >
                   <img
                     src={image.dataUrl}
-                    alt={images.length > 1 ? `Photo ${index + 1} you sent` : "Photo you sent"}
+                    alt={
+                      image.clip
+                        ? `Frame ${index + 1} of the clip you sent`
+                        : images.length > 1
+                          ? `Photo ${index + 1} you sent`
+                          : "Photo you sent"
+                    }
                     className="max-h-64 w-full rounded-lg object-contain"
                   />
                 </button>
@@ -618,6 +988,13 @@ function Bubble({ message, onOpen }: { message: ChatMessage; onOpen: (id: string
             </p>
           ) : null}
         </div>
+        {onHear ? (
+          <div className="mt-2">
+            <Button intent="quiet" onClick={onHear}>
+              Hear it
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
