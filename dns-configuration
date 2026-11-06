@@ -1,4 +1,22 @@
+GitHub verification DNS record
 
-1. Create a TXT record in your DNS configuration for the following hostname: _gh-Kai-s-Utopian-Paradise-o.emperorkaidagodking.github.io
-2. Use this code for the value of the TXT record: 3b1c96168c. Please note that the code will expire in 7 days.
-3. Wait until your DNS configuration changes. This could take up to 72 hours to propagate.
+Add the following TXT record to the DNS configuration for the GitHub Pages domain verification:
+
+- Hostname: _gh-Kai-s-Utopian-Paradise-o.emperorkaidagodking.github.io
+- Type: TXT
+- Value: 3b1c96168c
+- TTL: Use your provider's default or 300 seconds if you have the option.
+
+Important:
+- This verification code expires in 7 days.
+- DNS changes may take up to 72 hours to propagate.
+
+Steps:
+1. Log in to your DNS provider.
+2. Create a new TXT record.
+3. Enter the hostname exactly as shown above.
+4. Set the record type to TXT.
+5. Paste the value exactly as shown: 3b1c96168c
+6. Save the record and wait for propagation.
+
+Once the DNS update is live, GitHub will be able to verify the domain.
