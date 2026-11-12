@@ -7,6 +7,10 @@ import appCss from "../styles.css?url";
 
 const APP_NAME = "Frank";
 
+// Google Analytics 4 (page views only; no chat content or user text is sent).
+const GA_MEASUREMENT_ID = "G-ENZJHMMQX3";
+const GA_INIT = `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${GA_MEASUREMENT_ID}');`;
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -37,6 +41,8 @@ export const Route = createRootRoute({
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`} />
+        <script dangerouslySetInnerHTML={{ __html: GA_INIT }} />
       </head>
       <body>
         <PreviewHostBridge />
