@@ -4,7 +4,7 @@
  * forwards them on the live reply and must not log them.
  *
  * xAI image input, checked 2026-10-29 against docs.x.ai, accepts jpeg and png.
- * Webp and gif are allowed in the composer; the browser re-encodes those to
+ * Webp, gif, and HEIC are allowed in the composer; the browser re-encodes those to
  * jpeg before the request (a gif still plays in the thread).
  */
 
@@ -17,10 +17,10 @@ export const MAX_GIF_BYTES = 900_000;
 export const SMALL_ORIGINAL_BYTES = 350_000;
 export const MAX_IMAGE_EDGE = 1600;
 
-export const MEDIA_TYPE_ERROR = "Frank can take a jpg, png, webp, or gif.";
+export const MEDIA_TYPE_ERROR = "Frank can take a jpg, png, webp, gif, or heic (iPhone photos).";
 export const MEDIA_LARGE_ERROR = "That photo is too large. Try a smaller one.";
 export const MEDIA_GIF_ERROR = "That gif is too large. Try a shorter one, or send a still.";
-export const MEDIA_READ_ERROR = "Could not read that photo.";
+export const MEDIA_READ_ERROR = "Could not read that photo. If it is an iPhone photo, try saving as JPEG first.";
 export const MEDIA_COUNT_ERROR = "You can attach up to 4 photos.";
 export const MEDIA_PREPARE_ERROR = "Could not prepare that photo. Try once more.";
 
@@ -31,7 +31,7 @@ export type ChatImage = {
   clip?: true;
 };
 
-export type ImageKind = "jpeg" | "png" | "webp" | "gif" | "other";
+export type ImageKind = "jpeg" | "png" | "webp" | "gif" | "heic" | "other";
 
 const MODEL_URL = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
 const DISPLAY_URL = /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -71,6 +71,9 @@ export function sniffImageKind(file: { type?: string; name?: string }): ImageKin
       return "webp";
     case "image/gif":
       return "gif";
+    case "image/heic":
+    case "image/heif":
+      return "heic";
     default:
       break;
   }
@@ -80,6 +83,7 @@ export function sniffImageKind(file: { type?: string; name?: string }): ImageKin
   if (name.endsWith(".png")) return "png";
   if (name.endsWith(".webp")) return "webp";
   if (name.endsWith(".gif")) return "gif";
+  if (name.endsWith(".heic") || name.endsWith(".heif")) return "heic";
   return "other";
 }
 
