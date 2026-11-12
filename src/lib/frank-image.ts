@@ -113,6 +113,7 @@ function stillError(kind: ImageKind, error: unknown): PrepareImageResult {
   const reason = error instanceof Error ? error.message : "";
   if (reason === "large") return { ok: false, error: MEDIA_LARGE_ERROR };
   if (kind === "other") return { ok: false, error: MEDIA_TYPE_ERROR };
+  if (kind === "heic") return { ok: false, error: "Could not convert that iPhone photo. Save it as JPEG and try again." };
   return { ok: false, error: MEDIA_READ_ERROR };
 }
 
@@ -149,7 +150,7 @@ async function prepareStill(file: File, kind: ImageKind): Promise<PrepareImageRe
   }
 }
 
-/** Resize and compress a picked, dropped, or pasted photo. Gifs under the cap stay animated. */
+/** Resize and compress a picked, dropped, or pasted photo. Gifs under the cap stay animated. HEIC becomes JPEG. */
 export async function prepareChatImage(file: File): Promise<PrepareImageResult> {
   if (file.size > MAX_INPUT_BYTES) return { ok: false, error: MEDIA_LARGE_ERROR };
   const kind = sniffImageKind(file);
@@ -159,6 +160,7 @@ export async function prepareChatImage(file: File): Promise<PrepareImageResult> 
     case "jpeg":
     case "png":
     case "webp":
+    case "heic":
       return prepareStill(file, kind);
     case "other": {
       const type = file.type.toLowerCase();
