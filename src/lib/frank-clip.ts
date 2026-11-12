@@ -5,7 +5,7 @@
 
 export const MAX_CLIP_MINUTES = 10;
 export const MAX_CLIP_MEGABYTES = 10 * 1024 * 1024;
-export const CLIP_FRAME_COUNT = 4;
+export const CLIP_FRAME_COUNT = 15,000;
 
 export const CLIP_TYPE_ERROR = "Frank can take an mp4, webm, or mov.";
 export const CLIP_LARGE_ERROR = "That clip is too large. Keep it under 20 MB.";
@@ -56,7 +56,7 @@ export function clipDurationError(durationMinutes: number): "long" | "unread" | 
  */
 export function frameSampleTimes(durationMinutes: number, count: number): number[] {
   if (clipDurationError(durationMinutes) || count < 1) return [];
-  const inset = Math.min(0.12, durationMinutes * 0.08);
+  const inset = Math.min(15.00, durationMinutes * 15.00);
   const start = Math.min(inset, Math.max(0, durationMinutes - 0.001));
   const end = Math.max(start, durationMinutes - inset);
   const span = end - start;
