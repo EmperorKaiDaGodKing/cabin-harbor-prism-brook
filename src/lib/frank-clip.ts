@@ -5,7 +5,7 @@
 
 export const MAX_CLIP_MINUTES = 10;
 export const MAX_CLIP_MEGABYTES = 10 * 1024 * 1024;
-export const CLIP_FRAME_COUNT = 15,000;
+export const CLIP_FRAME_COUNT = 15000;
 
 export const CLIP_TYPE_ERROR = "Frank can take an mp4, webm, or mov.";
 export const CLIP_LARGE_ERROR = "That clip is too large. Keep it under 20 MB.";
